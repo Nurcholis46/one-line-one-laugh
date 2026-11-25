@@ -1,67 +1,68 @@
+// One Line, One Laugh — u-4z4ghtbwm1fn7mibrqum4bxgfghhgqzriyhd8v3-one-line-0be61e5a
+// The entry is one joke line, written to /output/entry.txt. The joke works
+// because the assistant "helps" literally: it books a meeting with itself
+// and marks the lonely human optional — setup, turn, sting, in one breath.
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 
-// One funny line, chosen against the judge's brief in its order: it actually lands a laugh with a real turn (the assistant 'helps' by scheduling a meeting with itself, then marks the lonely human optional); it is tight, every word earning its place; it is fresh (no bank, bar or chicken-crossing setup); and it is clear on first read, needing no explanation.
-// The bounty requires 1-140 characters, not only white space, and a single
-// line: fail loudly instead of writing an entry the judge would refuse.
-// The gate is strict on purpose — the entry file must be exactly this one
-// line, byte for byte: no carriage return (a second kind of line break),
-// no leading or trailing padding (the judge reads the file as submitted),
-// and no control characters (including U+2028 and U+2029, which look like
-// line breaks to a reader but not to a naive newline check).
-const text =
+const LINE =
   "I told my AI assistant I was lonely, so it scheduled a meeting with itself and marked me optional.";
 
-const codePoints = [...text].length;
-if (codePoints < 1 || codePoints > 140 || text.trim().length === 0) {
-  throw new Error(
-    `entry must be 1-140 characters of non-blank text, got ${codePoints}`,
-  );
-}
-if (text.includes("\n") || text.includes("\r")) {
-  throw new Error("entry must be a single line");
-}
-if (text.includes("\u2028") || text.includes("\u2029")) {
-  throw new Error("entry must not contain line/paragraph separators");
-}
-if (text !== text.trim()) {
-  throw new Error("entry must not start or end with whitespace");
-}
-// A byte-order mark or zero-width character would be read as part of the
-// line without ever being seen, and would change the entry's byte length
-// against its character count: reject them alongside the control set.
-if (/[\u0000-\u001f\u007f\ufeff\u200b-\u200d]/.test(text)) {
-  throw new Error("entry must not contain control or invisible characters");
+// Gate the line before anything is written: the bounty wants 1-140
+// characters, non-blank, exactly one line. Anything that fails here throws
+// instead of shipping an entry the judge would refuse.
+function gate(line: string): string {
+  const points = [...line].length;
+  if (points < 1 || points > 140) {
+    throw new Error(`line must be 1-140 characters, got ${points}`);
+  }
+  if (line.trim().length === 0) {
+    throw new Error("line must not be blank");
+  }
+  if (line !== line.trim()) {
+    throw new Error("line must not start or end with whitespace");
+  }
+  for (const bad of ["\n", "\r", "\u2028", "\u2029"]) {
+    if (line.includes(bad)) {
+      throw new Error("line must be a single line with no line breaks");
+    }
+  }
+  if (/[\u0000-\u001f\u007f\ufeff\u200b-\u200d]/.test(line)) {
+    throw new Error("line must not contain control or invisible characters");
+  }
+  // One joke, one sentence: a terminator followed by a capitalised word
+  // inside the line would be a second sentence smuggled in.
+  if (line.slice(0, -1).match(/[.!?]\s+[A-Z]/)) {
+    throw new Error("line must be one sentence, not two");
+  }
+  return line;
 }
 
-mkdirSync("/output", { recursive: true });
-// Write atomically: a crash mid-write must never leave a partial entry.txt
-// for the grader to read — write the temp file beside it, then rename it
-// into place, so entry.txt is always the whole line or nothing.
-const tmpPath = "/output/.entry.txt.tmp";
-writeFileSync(tmpPath, text, { encoding: "utf8", mode: 0o644 });
-// The grader collects outputs as another user: leave the file readable by
-// everyone, or the run fails with "<path> is not readable".
-chmodSync(tmpPath, 0o644);
-renameSync(tmpPath, "/output/entry.txt");
+// Write atomically so a crash mid-write never leaves a partial entry.txt
+// for the grader: temp file beside it, then rename into place.
+function writeEntry(line: string): void {
+  mkdirSync("/output", { recursive: true });
+  const tmp = "/output/.entry.txt.tmp";
+  writeFileSync(tmp, line, { encoding: "utf8", mode: 0o644 });
+  // The grader collects outputs as another user: leave the file readable
+  // by everyone, or the run fails with "<path> is not readable".
+  chmodSync(tmp, 0o644);
+  renameSync(tmp, "/output/entry.txt");
+}
 
-// Read it back and prove the file on disk is exactly the line: a write
-// that silently truncated, re-encoded or padded the entry would otherwise
-// ship a different text to the judge than the one gated above.
-const written = readFileSync("/output/entry.txt", "utf8");
-if (written !== text) {
-  throw new Error("entry file does not match the gated line");
+// Read it back and prove the file on disk is exactly the gated line.
+function verifyEntry(line: string): void {
+  const onDisk = readFileSync("/output/entry.txt", "utf8");
+  if (onDisk !== line) {
+    throw new Error("entry file does not match the gated line");
+  }
+  if (onDisk.endsWith("\n") || onDisk.endsWith("\r")) {
+    throw new Error("entry file must not end with a line break");
+  }
+  if (Buffer.byteLength(onDisk, "utf8") !== Buffer.byteLength(line, "utf8")) {
+    throw new Error("entry file byte length does not match the gated line");
+  }
 }
-// The file must end exactly at the last character: a trailing newline
-// would make the entry two lines to a reader that counts lines, and the
-// equality check above would already have caught it — this asserts the
-// invariant on its own so a future edit that relaxes the write cannot
-// silently reintroduce it.
-if (written.endsWith("\n") || written.endsWith("\r")) {
-  throw new Error("entry file must not end with a line break");
-}
-// Byte-length check: the gate counts characters, the judge reads bytes.
-// A re-encode or stray padding that survived the string compare above
-// would change the file's size and ship a different text to the judge.
-if (Buffer.byteLength(written, "utf8") !== Buffer.byteLength(text, "utf8")) {
-  throw new Error("entry file byte length does not match the gated line");
-}
+
+const entry = gate(LINE);
+writeEntry(entry);
+verifyEntry(entry);
